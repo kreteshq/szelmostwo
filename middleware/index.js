@@ -1,7 +1,7 @@
-const static = require('./static');
+const serve = require('./serve');
 const security = require('./security');
 
 module.exports = {
-  static,
+  serve,
   security
 }

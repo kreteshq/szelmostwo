@@ -21,7 +21,7 @@ const path = require('path');
 const assert = require('assert');
 const mime = require('mime-types');
 
-const static = (root, opts = { index: 'index.html' }) => {
+const serve = (root, opts = { index: 'index.html' }) => {
   assert(root, 'you need to specify `root` directory');
   debug('"%s" %j', root, opts);
 
@@ -56,4 +56,4 @@ const static = (root, opts = { index: 'index.html' }) => {
   };
 };
 
-module.exports = static;
+module.exports = serve;
