@@ -19,7 +19,6 @@ const Stream = require('stream');
 const assert = require('assert');
 const rawBody = require('raw-body');
 const querystring = require('querystring');
-const extractParams = require('path-to-regexp');
 
 const { compose, match, isObject } = require('./util');
 
@@ -40,7 +39,12 @@ class Szelmostwo extends Emitter {
       };
 
       try {
-        await compose(handleRoute(response), handleError, ...this.middlewareList, notFound)(context);
+        await compose(
+          handleRoute(response),
+          handleError,
+          ...this.middlewareList,
+          notFound
+        )(context);
       } catch (e) {
         response.statusCode = 500;
         response.end();
@@ -95,7 +99,7 @@ const route = (method, path, func) => {
       return await next();
     }
   };
-}
+};
 
 const handleError = async (context, next) => {
   try {
@@ -109,7 +113,7 @@ const handleError = async (context, next) => {
       return { statusCode: 500, body: error.message };
     }
   }
-}
+};
 
 const handleRoute = response => {
   return async (context, next) => {
@@ -134,7 +138,10 @@ const handleRoute = response => {
     }
 
     let r = await next();
-    if (!r) throw new Error('One of your routes does not return a value. You probably forgot a `return` statement.');
+    if (!r)
+      throw new Error(
+        'One of your routes does not return a value. You probably forgot a `return` statement.'
+      );
 
     let body;
     let headers;
@@ -171,7 +178,8 @@ const handleRoute = response => {
     }
 
     if (body instanceof Stream) {
-      if (!response.getHeader('Content-Type')) response.setHeader('Content-Type', type || 'text/html');
+      if (!response.getHeader('Content-Type'))
+        response.setHeader('Content-Type', type || 'text/html');
 
       body.pipe(response);
       return;
@@ -183,17 +191,18 @@ const handleRoute = response => {
       str = JSON.stringify(body);
       response.setHeader('Content-Type', 'application/json');
     } else {
-      if (!response.getHeader('Content-Type')) response.setHeader('Content-Type', type || 'text/plain');
+      if (!response.getHeader('Content-Type'))
+        response.setHeader('Content-Type', type || 'text/plain');
     }
 
     response.setHeader('Content-Length', Buffer.byteLength(str));
     response.end(str);
   };
-}
+};
 
 const notFound = async () => {
   throw new HTTPError(404, "There's no such route.");
-}
+};
 
 class HTTPError extends Error {
   constructor(statusCode, message) {
