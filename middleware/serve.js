@@ -13,10 +13,10 @@
 
 const debug = require('debug')('huncwot:static');
 
-const fs = require('fs').promises;
-const fso = require('fs');
-
 const Promise = require('bluebird');
+
+const fs = require('fs-extra')
+
 const path = require('path');
 const assert = require('assert');
 const mime = require('mime-types');
@@ -45,7 +45,7 @@ const serve = (root, opts = { index: 'index.html' }) => {
             'Content-Type': mime.lookup(type) || 'application/octet-stream',
             'Content-Length': stats.size
           },
-          body: fso.createReadStream(file)
+          body: fs.createReadStream(file)
         };
       } catch (error) {
         return next();
