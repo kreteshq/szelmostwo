@@ -19,6 +19,7 @@ const Stream = require('stream');
 const assert = require('assert');
 const rawBody = require('raw-body');
 const querystring = require('querystring');
+const Busboy = require('busboy');
 
 const { compose, match, isObject } = require('./util');
 
@@ -121,7 +122,8 @@ const handleRoute = response => {
     const buffer = await rawBody(context.request);
 
     if (buffer.length > 0) {
-      const contentType = context.request.headers['content-type'].split(';')[0];
+      const headers = context.headers;
+      const contentType = headers['content-type'].split(';')[0];
 
       switch (contentType) {
         case 'application/x-www-form-urlencoded':
@@ -132,6 +134,34 @@ const handleRoute = response => {
           if (isObject(result)) {
             Object.assign(context.params, result);
           }
+          break;
+        case 'multipart/form-data':
+          context.files = {};
+
+          const busboy = new Busboy({ headers });
+
+          busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
+            file.on('data', data => {
+              context.files = {
+                ...context.files,
+                [fieldname]: {
+                  name: filename,
+                  length: data.length,
+                  data,
+                  encoding,
+                  mimetype
+                }
+              };
+            });
+            file.on('end', () => {});
+          });
+          busboy.on('field', (fieldname, val) => {
+            context.params = { ...context.params, [fieldname]: val };
+          });
+          busboy.end(buffer);
+
+          await new Promise(resolve => busboy.on('finish', resolve));
+
           break;
         default:
       }
