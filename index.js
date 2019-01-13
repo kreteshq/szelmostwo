@@ -23,6 +23,8 @@ const Busboy = require('busboy');
 
 const { compose, match, isObject } = require('./util');
 
+const log = require('roarr').default;
+
 class Szelmostwo extends Emitter {
   constructor() {
     super();
@@ -46,9 +48,29 @@ class Szelmostwo extends Emitter {
           ...this.middlewareList,
           notFound
         )(context);
+
+        log.debug(
+          {
+            path: context.pathname,
+            method: context.request.method,
+            statusCode: response.statusCode,
+            params: context.params
+          },
+          'package:szelmostwo'
+        );
       } catch (e) {
         response.statusCode = 500;
         response.end();
+
+        log.error(
+          {
+            path: context.pathname,
+            method: context.request.method,
+            statusCode: response.statusCode,
+            error: 'test'
+          },
+          'package:szelmostwo'
+        );
       }
     });
 

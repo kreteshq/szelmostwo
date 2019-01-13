@@ -16,6 +16,7 @@
     "fs-extra": "^7.0.1",
     "mime-types": "^2.1.21",
     "path-to-regexp": "^2.4.0",
-    "raw-body": "^2.3.3"
+    "raw-body": "^2.3.3",
+    "roarr": "^2.12.1"
   }
 }
