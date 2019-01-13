@@ -132,11 +132,7 @@ const handleError = async (context, next) => {
   } catch (error) {
     assert(error instanceof Error, `non-error thrown: ${error}`);
 
-    if (error instanceof HTTPError) {
-      return { statusCode: error.statusCode, body: error.message };
-    } else {
-      return { statusCode: 500, body: error.message };
-    }
+    return { statusCode: error.statusCode || 500, body: error.message };
   }
 };
 
