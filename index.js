@@ -115,6 +115,8 @@ const route = (method, path, func) => {
     const { pathname, query } = require('url').parse(context.request.url, true);
     const params = match()(path)(pathname);
 
+    context.pathname = pathname;
+
     if (context.request.method === method && params) {
       Object.assign(context.params, params, query);
       return await func(context);
