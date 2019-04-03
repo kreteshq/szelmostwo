@@ -1,6 +1,6 @@
 {
   "name": "szelmostwo",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Minimal Node.js web framework built for modern JavaScript",
   "main": "index.js",
   "repository": "https://github.com/zaiste/szelmostwo",
