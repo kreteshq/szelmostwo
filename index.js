@@ -103,6 +103,7 @@ class Szelmostwo extends Emitter {
       }
 
       if (handler !== undefined) {
+        await handleRequest(context);
         context.params = { ...context.params, ...query, ...params };
         return await handler(context);
       } else {
@@ -176,8 +177,6 @@ const handle = async (context, result = '') => {
   let { request, response } = context;
 
   let body, headers, type, encoding;
-
-  await handleRequest(context);
 
   if (typeof result === 'string' || result instanceof Stream) {
     body = result;
