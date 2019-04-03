@@ -113,7 +113,7 @@ class Szelmostwo extends Emitter {
 }
 
 async function streamToString(stream) {
-  const chunks = '';
+  let chunks = '';
 
   return new Promise((resolve, reject) => {
     stream.on('data', chunk => (chunks += chunk));
