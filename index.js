@@ -1,4 +1,4 @@
-// Copyright 2018 Zaiste & contributors. All rights reserved.
+// Copyright 2019 Zaiste & contributors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,29 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const debug = require('debug')('huncwot:core');
-
+const { parse } = require('url');
 const http = require('http');
 const Emitter = require('events');
 const Stream = require('stream');
-const assert = require('assert');
-const rawBody = require('raw-body');
 const querystring = require('querystring');
 const Busboy = require('busboy');
+const Router = require('trek-router');
 
-const { compose, match, isObject } = require('./util');
+const pp = console.log.bind(console);
 
-const log = require('roarr').default;
+const isObject = _ => !!_ && _.constructor === Object;
 
 class Szelmostwo extends Emitter {
   constructor() {
     super();
-    this.middlewareList = [];
+    this.middlewareList = new Middleware();
+    this.router = new Router();
   }
 
   listen() {
-    debug('listen');
-    const server = http.createServer(async (request, response) => {
+    // append 404 handler: it must be put at the end and only once
+    // TODO Move to `catch` for pattern matching ?
+    this.middlewareList.push(({ response }, next) => {
+      response.statusCode = 404;
+      response.end();
+    });
+
+    const server = http.createServer((request, response) => {
       const context = {
         params: {},
         headers: {},
@@ -41,37 +46,13 @@ class Szelmostwo extends Emitter {
         response
       };
 
-      try {
-        await compose(
-          handleRoute(response),
-          handleError,
-          ...this.middlewareList,
-          notFound
-        )(context);
-
-        log.debug(
-          {
-            path: context.pathname,
-            method: context.request.method,
-            statusCode: response.statusCode,
-            params: context.params
-          },
-          'package:szelmostwo'
-        );
-      } catch (e) {
-        response.statusCode = 500;
-        response.end();
-
-        log.error(
-          {
-            path: context.pathname,
-            method: context.request.method,
-            statusCode: response.statusCode,
-            error: 'test'
-          },
-          'package:szelmostwo'
-        );
-      }
+      this.middlewareList
+        .compose(context)
+        .then(result => handle(context, result))
+        .catch(error => {
+          response.statusCode = 500;
+          response.end(error.message);
+        });
     });
 
     return server.listen.apply(server, arguments);
@@ -82,182 +63,192 @@ class Szelmostwo extends Emitter {
       throw new TypeError('middleware must be a function');
     }
 
-    debug("use: '%s'", func.name || '-');
-
     this.middlewareList.push(func);
 
     return this;
   }
 
   get(path, func) {
-    this.use(route('GET', path, func));
+    this.use(this.route('GET', path, func));
   }
 
   post(path, func) {
-    this.use(route('POST', path, func));
+    this.use(this.route('POST', path, func));
   }
 
   put(path, func) {
-    this.use(route('PUT', path, func));
+    this.use(this.route('PUT', path, func));
   }
 
   patch(path, func) {
-    this.use(route('PATCH', path, func));
+    this.use(this.route('PATCH', path, func));
   }
 
   delete(path, func) {
-    this.use(route('DELETE', path, func));
+    this.use(this.route('DELETE', path, func));
+  }
+
+  route(method, path, func) {
+    this.router.add(method, path, func);
+
+    return async (context, next) => {
+      const method = context.request.method;
+      const { pathname, query } = parse(context.request.url, true);
+
+      const [handler, dynamicRoutes] = this.router.find(method, pathname);
+
+      const params = {};
+      for (let r of dynamicRoutes) {
+        params[r.name] = r.value;
+      }
+
+      if (handler !== undefined) {
+        context.params = { ...context.params, ...query, ...params };
+        return await handler(context);
+      } else {
+        return await next();
+      }
+    };
   }
 }
 
-const route = (method, path, func) => {
-  return async (context, next) => {
-    const { pathname, query } = require('url').parse(context.request.url, true);
-    const params = match()(path)(pathname);
+async function streamToString(stream) {
+  const chunks = '';
 
-    context.pathname = pathname;
+  return new Promise((resolve, reject) => {
+    stream.on('data', chunk => (chunks += chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(chunks));
+  });
+}
 
-    if (context.request.method === method && params) {
-      Object.assign(context.params, params, query);
-      return await func(context);
-    } else {
-      return await next();
+const handleRequest = async context => {
+  const buffer = await streamToString(context.request);
+
+  if (buffer.length > 0) {
+    const headers = context.request.headers;
+    const contentType = headers['content-type'].split(';')[0];
+
+    switch (contentType) {
+      case 'application/x-www-form-urlencoded':
+        Object.assign(context.params, querystring.parse(buffer));
+        break;
+      case 'application/json':
+        const result = JSON.parse(buffer);
+        if (isObject(result)) {
+          Object.assign(context.params, result);
+        }
+        break;
+      case 'multipart/form-data':
+        context.files = {};
+
+        const busboy = new Busboy({ headers });
+
+        busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
+          file.on('data', data => {
+            context.files = {
+              ...context.files,
+              [fieldname]: {
+                name: filename,
+                length: data.length,
+                data,
+                encoding,
+                mimetype
+              }
+            };
+          });
+          file.on('end', () => {});
+        });
+        busboy.on('field', (fieldname, val) => {
+          context.params = { ...context.params, [fieldname]: val };
+        });
+        busboy.end(buffer);
+
+        await new Promise(resolve => busboy.on('finish', resolve));
+
+        break;
+      default:
     }
-  };
-};
-
-const handleError = async (context, next) => {
-  try {
-    return await next();
-  } catch (error) {
-    assert(error instanceof Error, `non-error thrown: ${error}`);
-
-    return { statusCode: error.statusCode || 500, body: error.message };
   }
 };
 
-const handleRoute = response => {
-  return async (context, next) => {
-    context.headers = context.request.headers;
-    const buffer = await rawBody(context.request);
+const handle = async (context, result = '') => {
+  let { request, response } = context;
 
-    if (buffer.length > 0) {
-      const headers = context.headers;
-      const contentType = headers['content-type'].split(';')[0];
+  let body, headers, type, encoding;
 
-      switch (contentType) {
-        case 'application/x-www-form-urlencoded':
-          Object.assign(context.params, querystring.parse(buffer.toString()));
-          break;
-        case 'application/json':
-          const result = JSON.parse(buffer);
-          if (isObject(result)) {
-            Object.assign(context.params, result);
-          }
-          break;
-        case 'multipart/form-data':
-          context.files = {};
+  await handleRequest(context);
 
-          const busboy = new Busboy({ headers });
+  if (typeof result === 'string' || result instanceof Stream) {
+    body = result;
+  } else {
+    body = result.body;
+    headers = result.headers;
+    type = result.type;
+    encoding = result.encoding;
+  }
 
-          busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
-            file.on('data', data => {
-              context.files = {
-                ...context.files,
-                [fieldname]: {
-                  name: filename,
-                  length: data.length,
-                  data,
-                  encoding,
-                  mimetype
-                }
-              };
-            });
-            file.on('end', () => {});
-          });
-          busboy.on('field', (fieldname, val) => {
-            context.params = { ...context.params, [fieldname]: val };
-          });
-          busboy.end(buffer);
+  response.statusCode = result.statusCode || 200;
 
-          await new Promise(resolve => busboy.on('finish', resolve));
+  const buffer = [];
 
-          break;
-        default:
-      }
-    }
+  for (var key in headers) {
+    response.setHeader(key, headers[key]);
+  }
 
-    let r = await next();
-    if (!r)
-      throw new Error(
-        'One of your routes does not return a value. You probably forgot a `return` statement.'
-      );
+  if (encoding) response.setHeader('Content-Encoding', encoding);
 
-    let body;
-    let headers;
-    let type;
-    let encoding;
+  if (Buffer.isBuffer(body)) {
+    response.setHeader('Content-Type', type || 'application/octet-stream');
+    response.setHeader('Content-Length', body.length);
+    response.end(body);
+    return;
+  }
 
-    response.statusCode = r.statusCode || 200;
+  if (body instanceof Stream) {
+    if (!response.getHeader('Content-Type'))
+      response.setHeader('Content-Type', type || 'text/html');
 
-    if (typeof r === 'string' || r instanceof Stream) {
-      body = r;
-    } else {
-      body = r.body;
-      headers = r.headers;
-      type = r.type;
-      encoding = r.encoding;
-    }
+    body.pipe(response);
+    return;
+  }
 
-    for (var key in headers) {
-      response.setHeader(key, headers[key]);
-    }
+  let str = body;
 
-    if (encoding) response.setHeader('Content-Encoding', encoding);
+  if (typeof body === 'object' || typeof body === 'number') {
+    str = JSON.stringify(body);
+    response.setHeader('Content-Type', 'application/json');
+  } else {
+    if (!response.getHeader('Content-Type'))
+      response.setHeader('Content-Type', type || 'text/plain');
+  }
 
-    if (body === null) {
-      response.end();
-      return;
-    }
-
-    if (Buffer.isBuffer(body)) {
-      response.setHeader('Content-Type', type || 'application/octet-stream');
-      response.setHeader('Content-Length', body.length);
-      response.end(body);
-      return;
-    }
-
-    if (body instanceof Stream) {
-      if (!response.getHeader('Content-Type'))
-        response.setHeader('Content-Type', type || 'text/html');
-
-      body.pipe(response);
-      return;
-    }
-
-    let str = body;
-
-    if (typeof body === 'object' || typeof body === 'number') {
-      str = JSON.stringify(body);
-      response.setHeader('Content-Type', 'application/json');
-    } else {
-      if (!response.getHeader('Content-Type'))
-        response.setHeader('Content-Type', type || 'text/plain');
-    }
-
-    response.setHeader('Content-Length', Buffer.byteLength(str));
-    response.end(str);
-  };
+  response.setHeader('Content-Length', Buffer.byteLength(str));
+  response.end(str);
 };
 
-const notFound = async () => {
-  throw new HTTPError(404, "There's no such route.");
-};
+class Middleware extends Array {
+  async next(context, last, current, done, called, func) {
+    if ((done = current > this.length)) return;
 
-class HTTPError extends Error {
-  constructor(statusCode, message) {
-    super(message);
-    this.statusCode = statusCode;
+    func = this[current] || last;
+
+    return (
+      func &&
+      func(context, async () => {
+        if (called) throw new Error('next() already called');
+        called = true;
+        return await this.next(context, last, current + 1);
+      })
+    );
+  }
+
+  async compose(context, last) {
+    try {
+      return await this.next(context, last, 0);
+    } catch (error) {
+      return error;
+    }
   }
 }
 

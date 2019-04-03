@@ -13,9 +13,7 @@
 
 const debug = require('debug')('huncwot:static');
 
-const Promise = require('bluebird');
-
-const fs = require('fs-extra')
+const fs = require('fs-extra');
 
 const path = require('path');
 const assert = require('assert');
