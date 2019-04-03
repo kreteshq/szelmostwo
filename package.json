@@ -5,7 +5,7 @@
   "main": "index.js",
   "repository": "https://github.com/zaiste/szelmostwo",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "ava"
   },
   "author": "Zaiste",
   "license": "Apache-2.0",
@@ -15,5 +15,10 @@
     "fs-extra": "^7.0.1",
     "mime-types": "^2.1.22",
     "trek-router": "^1.2.0"
+  },
+  "devDependencies": {
+    "ava": "^1.4.1",
+    "axios": "^0.18.0",
+    "formdata-node": "^1.5.1"
   }
 }
