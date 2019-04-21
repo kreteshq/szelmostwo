@@ -5,12 +5,18 @@ import FormData from 'formdata-node';
 const Szelmostwo = require('..');
 const { ok } = require('../response.js');
 
+const identity = next => next;
+const append = next => async request => `Hello: ${await next(request)}`;
+
 const app = new Szelmostwo();
 app.get('/', _ => 'Hello, World');
 app.get('/json', _ => ok({ hello: 'world' }));
 app.get('/name/:name', ({ params }) => ok({ hello: params.name }));
 app.post('/bim', request => `POST: ${request.params.name}`);
 app.post('/upload', async request => `File Upload:`);
+
+app.get('/compose1', identity, _ => 'Compose 1');
+app.get('/compose2', append, _ => 'Compose 2');
 
 app.listen(3000);
 
@@ -22,6 +28,18 @@ test('returns string', async t => {
   const response = await perform.get('/');
   t.is(response.status, 200);
   t.is(response.data, 'Hello, World');
+});
+
+test('compose works & returns string', async t => {
+  const response = await perform.get('/compose1');
+  t.is(response.status, 200);
+  t.is(response.data, 'Compose 1');
+});
+
+test('compose works & appends string', async t => {
+  const response = await perform.get('/compose2');
+  t.is(response.status, 200);
+  t.is(response.data, 'Hello: Compose 2');
 });
 
 test('returns json', async t => {

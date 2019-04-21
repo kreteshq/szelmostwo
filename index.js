@@ -22,6 +22,8 @@ const Router = require('trek-router');
 const pp = console.log.bind(console);
 
 const isObject = _ => !!_ && _.constructor === Object;
+const compose = (...functions) => args =>
+  functions.reduceRight((arg, fn) => fn(arg), args);
 
 class Szelmostwo extends Emitter {
   constructor() {
@@ -68,32 +70,37 @@ class Szelmostwo extends Emitter {
     return this;
   }
 
-  get(path, func) {
-    this.use(this.route('GET', path, func));
+  get(path, ...func) {
+    this.use(this.route('GET', path, ...func));
   }
 
-  post(path, func) {
-    this.use(this.route('POST', path, func));
+  post(path, ...func) {
+    this.use(this.route('POST', path, ...func));
   }
 
-  put(path, func) {
-    this.use(this.route('PUT', path, func));
+  put(path, ...func) {
+    this.use(this.route('PUT', path, ...func));
   }
 
-  patch(path, func) {
-    this.use(this.route('PATCH', path, func));
+  patch(path, ...func) {
+    this.use(this.route('PATCH', path, ...func));
   }
 
-  delete(path, func) {
-    this.use(this.route('DELETE', path, func));
+  delete(path, ...func) {
+    this.use(this.route('DELETE', path, ...func));
   }
 
-  route(method, path, func) {
-    this.router.add(method, path, func);
+  route(method, path, ...fns) {
+    const [func] = fns.splice(-1, 1);
+    this.router.add(
+      method,
+      path,
+      fns.length === 0 ? func : compose(...fns)(func)
+    );
 
     return async (context, next) => {
       const method = context.request.method;
-      const { pathname, query } = parse(context.request.url, true);
+      const { pathname, query } = parse(context.request.url, true); // TODO Test perf vs RegEx
 
       const [handler, dynamicRoutes] = this.router.find(method, pathname);
 
