@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const { parse } = require('url');
-const http = require('http');
-const Emitter = require('events');
+const { parse } = require('querystring');
+
+const http = require('uWebSockets.js');
 const Stream = require('stream');
 const querystring = require('querystring');
 const Busboy = require('busboy');
-const Router = require('trek-router');
 
 const pp = console.log.bind(console);
 
@@ -25,126 +24,143 @@ const isObject = _ => !!_ && _.constructor === Object;
 const compose = (...functions) => args =>
   functions.reduceRight((arg, fn) => fn(arg), args);
 
-class Szelmostwo extends Emitter {
-  constructor() {
-    super();
-    this.middlewareList = new Middleware();
-    this.router = new Router();
-  }
-
-  listen() {
-    // append 404 handler: it must be put at the end and only once
-    // TODO Move to `catch` for pattern matching ?
-    this.middlewareList.push(({ response }, next) => {
-      response.statusCode = 404;
-      response.end();
-    });
-
-    const server = http.createServer((request, response) => {
-      const context = {
-        params: {},
-        headers: {},
-        request,
-        response
-      };
-
-      this.middlewareList
-        .compose(context)
-        .then(result => handle(context, result))
-        .catch(error => {
-          response.statusCode = 500;
-          response.end(error.message);
-        });
-    });
-
-    return server.listen.apply(server, arguments);
-  }
-
-  use(func) {
-    if (typeof func !== 'function') {
-      throw new TypeError('middleware must be a function');
-    }
-
-    this.middlewareList.push(func);
-
-    return this;
-  }
-
-  get(path, ...func) {
-    this.use(this.route('GET', path, ...func));
-  }
-
-  post(path, ...func) {
-    this.use(this.route('POST', path, ...func));
-  }
-
-  put(path, ...func) {
-    this.use(this.route('PUT', path, ...func));
-  }
-
-  patch(path, ...func) {
-    this.use(this.route('PATCH', path, ...func));
-  }
-
-  delete(path, ...func) {
-    this.use(this.route('DELETE', path, ...func));
-  }
-
-  route(method, path, ...fns) {
-    const [func] = fns.splice(-1, 1);
-    this.router.add(
-      method,
-      path,
-      fns.length === 0 ? func : compose(...fns)(func)
-    );
-
-    return async (context, next) => {
-      const method = context.request.method;
-      const { pathname, query } = parse(context.request.url, true); // TODO Test perf vs RegEx
-
-      const [handler, dynamicRoutes] = this.router.find(method, pathname);
-
-      const params = {};
-      for (let r of dynamicRoutes) {
-        params[r.name] = r.value;
-      }
-
-      if (handler !== undefined) {
-        await handleRequest(context);
-        context.params = { ...context.params, ...query, ...params };
-        return await handler(context);
-      } else {
-        return await next();
-      }
-    };
-  }
-}
-
-async function streamToString(stream) {
-  let chunks = '';
-
+const parseBody = response => {
+  let chunks;
   return new Promise((resolve, reject) => {
-    stream.on('data', chunk => (chunks += chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolve(chunks));
+    response.onData((ab, isLast) => {
+      let chunk = Buffer.from(ab);
+      chunks = chunks ? Buffer.concat([chunks, chunk]) : Buffer.concat([chunk]);
+      if (isLast) {
+        try {
+          resolve(chunks);
+        } catch (error) {
+          resolve({});
+        }
+      }
+    });
   });
-}
+};
 
-const handleRequest = async context => {
-  const buffer = await streamToString(context.request);
+const onFinished = (response, stream) => {
+  if (response.id == -1) {
+    console.log('onFinished called twice for the same response');
+  } else {
+    stream.destroy();
+  }
+
+  response.id = -1;
+};
+
+const toArrayBuffer = buffer =>
+  buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+
+const pipeStreamOverResponse = (response, stream, size) => {
+  stream
+    .on('data', chunk => {
+      const ab = toArrayBuffer(chunk);
+      let lastOffset = response.getWriteOffset();
+
+      let [ok, done] = response.tryEnd(ab, size);
+
+      if (done) {
+        onFinished(response, stream);
+      } else if (!ok) {
+        stream.pause();
+
+        response.ab = ab;
+        response.abOffset = lastOffset;
+
+        response.onWritable(offset => {
+          let [ok, done] = response.tryEnd(
+            response.ab.slice(offset - response.abOffset),
+            size
+          );
+
+          if (done) {
+            onFinished(response, stream);
+          } else if (ok) {
+            stream.resume();
+          }
+
+          return ok;
+        });
+      }
+    })
+    .on('error', () => {
+      console.log('Unhandled stream error');
+    });
+
+  response.onAborted(() => {
+    onFinished(response, stream);
+  });
+};
+
+const toUWS = handler => async (response, request) => {
+  response.onAborted(() => {
+    response.aborted = true;
+  });
+
+  try {
+    const context = {
+      _: { request, response },
+      params: {},
+      headers: {}
+    };
+
+    const result = await handler(context);
+
+    if (result) response.end(result);
+  } catch (error) {
+    response.writeStatus('500 Internal Server Error');
+    response.end(error.message);
+  }
+};
+
+const pre = order => next => async context => {
+  let { _ } = context;
+
+  const headers = {};
+  _.request.forEach((k, v) => {
+    headers[k] = v;
+  });
+  context.headers = headers;
+
+  context.method = _.request.getMethod();
+  context.url = _.request.getUrl();
+  context.queryparams = _.request.getQuery().substring(1);
+
+  const path = context.url;
+  const queryparams = context.queryparams;
+  const query = parse(queryparams);
+
+  // TODO Ugly Hack, This should be available via uWebSocket.js
+  let params = {};
+  let paramIndex = 0;
+  let paramValue = _.request.getParameter(0);
+  while (paramValue !== '') {
+    params[order[paramIndex]] = paramValue;
+    paramIndex++;
+    paramValue = _.request.getParameter(paramIndex);
+  }
+
+  context.params = { ...query, ...params };
+
+  const buffer = await parseBody(_.response);
 
   if (buffer.length > 0) {
-    const headers = context.request.headers;
     const contentType = headers['content-type'].split(';')[0];
 
     switch (contentType) {
       case 'application/x-www-form-urlencoded':
-        Object.assign(context.params, querystring.parse(buffer));
+        const { params } = context;
+        const form = querystring.parse(buffer.toString());
+        context.params = { ...params, ...form };
         break;
       case 'application/json':
-        const result = JSON.parse(buffer);
-        if (isObject(result)) {
-          Object.assign(context.params, result);
+        const body = JSON.parse(buffer);
+        if (isObject(body)) {
+          const { params } = context;
+          context.params = { ...params, ...body };
         }
         break;
       case 'multipart/form-data':
@@ -168,7 +184,8 @@ const handleRequest = async context => {
           file.on('end', () => {});
         });
         busboy.on('field', (fieldname, val) => {
-          context.params = { ...context.params, [fieldname]: val };
+          const { params } = context;
+          context.params = { ...params, [fieldname]: val };
         });
         busboy.end(buffer);
 
@@ -178,83 +195,115 @@ const handleRequest = async context => {
       default:
     }
   }
+
+  return next(context);
 };
 
-const handle = async (context, result = '') => {
-  let { request, response } = context;
+const post = next => {
+  return async context => {
+    const result = await next(context);
 
-  let body, headers, type, encoding;
+    let { _ } = context;
+    const response = _.response;
 
-  if (typeof result === 'string' || result instanceof Stream) {
-    body = result;
-  } else {
-    body = result.body;
-    headers = result.headers;
-    type = result.type;
-    encoding = result.encoding;
-  }
+    let { body, headers, type, encoding, status, additional } = result;
 
-  response.statusCode = result.statusCode || 200;
-
-  const buffer = [];
-
-  for (var key in headers) {
-    response.setHeader(key, headers[key]);
-  }
-
-  if (encoding) response.setHeader('Content-Encoding', encoding);
-
-  if (Buffer.isBuffer(body)) {
-    response.setHeader('Content-Type', type || 'application/octet-stream');
-    response.setHeader('Content-Length', body.length);
-    response.end(body);
-    return;
-  }
-
-  if (body instanceof Stream) {
-    if (!response.getHeader('Content-Type'))
-      response.setHeader('Content-Type', type || 'text/html');
-
-    body.pipe(response);
-    return;
-  }
-
-  let str = body;
-
-  if (typeof body === 'object' || typeof body === 'number') {
-    str = JSON.stringify(body);
-    response.setHeader('Content-Type', 'application/json');
-  } else {
-    if (!response.getHeader('Content-Type'))
-      response.setHeader('Content-Type', type || 'text/plain');
-  }
-
-  response.setHeader('Content-Length', Buffer.byteLength(str));
-  response.end(str);
-};
-
-class Middleware extends Array {
-  async next(context, last, current, done, called, func) {
-    if ((done = current > this.length)) return;
-
-    func = this[current] || last;
-
-    return (
-      func &&
-      func(context, async () => {
-        if (called) throw new Error('next() already called');
-        called = true;
-        return await this.next(context, last, current + 1);
-      })
-    );
-  }
-
-  async compose(context, last) {
-    try {
-      return await this.next(context, last, 0);
-    } catch (error) {
-      return error;
+    if (typeof result === 'string' || result instanceof Stream) {
+      body = result;
     }
+
+    response.writeStatus(status || '200 OK');
+
+    if (encoding) response.writeHeader('Content-Encoding', encoding);
+
+    for (var key in headers) {
+      response.writeHeader(key, headers[key]);
+    }
+
+    if (Buffer.isBuffer(body)) {
+      response.writeHeader('Content-Type', type || 'application/octet-stream');
+      response.writeHeader('Content-Length', body.length);
+      return body;
+    }
+
+    if (body instanceof Stream) {
+      // TODO Another ugly hack, yuck!
+      if (additional.size)
+        pipeStreamOverResponse(response, body, additional.size);
+      return;
+    }
+
+    if (typeof body === 'object' || typeof body === 'number') {
+      response.writeHeader('Content-Type', 'application/json');
+      return JSON.stringify(body);
+    }
+
+    // If nothing else matches, return it as plain text
+    response.writeHeader('Content-Type', type || 'text/plain');
+    return body;
+  };
+};
+
+class Szelmostwo {
+  constructor() {
+    this.routes = {
+      get: {},
+      post: {},
+      put: {},
+      patch: {},
+      delete: {}
+    };
+  }
+
+  listen() {
+    const server = http.App({});
+
+    for (let [method, route] of Object.entries(this.routes)) {
+      for (let [path, handler] of Object.entries(route)) {
+        server[method](path, handler);
+      }
+    }
+
+    server.any('/*', response => {
+      response.writeStatus('404 Not Found');
+      response.end('');
+    });
+
+    const [port = 5544, fn = () => {}] = arguments;
+
+    return server.listen(port, fn);
+  }
+
+  get(path, ...func) {
+    this.route('get', path, ...func);
+  }
+
+  post(path, ...func) {
+    this.route('post', path, ...func);
+  }
+
+  put(path, ...func) {
+    this.route('put', path, ...func);
+  }
+
+  patch(path, ...func) {
+    this.route('patch', path, ...func);
+  }
+
+  delete(path, ...func) {
+    this.route('delete', path, ...func);
+  }
+
+  route(method, path, ...fns) {
+    const order = (path.match(/:\w+/g) || []).map(_ => _.substring(1));
+
+    const [func] = fns.splice(-1, 1);
+    const handler =
+      fns.length === 0
+        ? compose(post, pre(order))(func)
+        : compose(post, pre(order), ...fns)(func);
+
+    this.routes[method][path] = toUWS(handler);
   }
 }
 

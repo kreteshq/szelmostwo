@@ -23,11 +23,13 @@ const serve = (root, opts = { index: 'index.html' }) => {
   assert(root, 'you need to specify `root` directory');
   debug('"%s" %j', root, opts);
 
-  return async (ctx, next) => {
-    debug('"%s" -> %s', ctx.request.method, ctx.request.url);
-    if (ctx.request.method === 'HEAD' || ctx.request.method == 'GET') {
+  return next => async context => {
+    const { method, url } = context;
+    debug('"%s" -> %s', method, url);
+
+    if (method.toUpperCase() === 'HEAD' || method.toUpperCase() == 'GET') {
       try {
-        let file = path.join(root, ctx.request.url);
+        let file = path.join(root, url);
         let stats = await fs.stat(file);
 
         if (stats.isDirectory()) {
@@ -38,18 +40,20 @@ const serve = (root, opts = { index: 'index.html' }) => {
         let type = path.extname(file);
 
         return {
-          statusCode: 200,
+          status: '200 OK',
           headers: {
-            'Content-Type': mime.lookup(type) || 'application/octet-stream',
-            'Content-Length': stats.size
+            'Content-Type': mime.lookup(type) || 'application/octet-stream'
           },
-          body: fs.createReadStream(file)
+          body: fs.createReadStream(file),
+          additional: {
+            size: stats.size
+          }
         };
       } catch (error) {
-        return next();
+        return next(context);
       }
     } else {
-      return next();
+      return next(context);
     }
   };
 };

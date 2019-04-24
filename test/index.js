@@ -1,6 +1,5 @@
 import test from 'ava';
 const axios = require('axios');
-import FormData from 'formdata-node';
 
 const Szelmostwo = require('..');
 const { ok } = require('../response.js');
@@ -54,7 +53,7 @@ test('returns param', async t => {
   t.deepEqual(response.data, { hello: 'zaiste' });
 });
 
-test('receives POST data', async t => {
+test('receives POST data as JSON', async t => {
   const response = await perform.post('/bim', {
     name: 'Zaiste'
   });
@@ -62,19 +61,30 @@ test('receives POST data', async t => {
   t.is(response.data, 'POST: Zaiste');
 });
 
-// TODO
-test('receives file upload', async t => {
-  const fd = new FormData();
+const querystring = require('querystring');
 
-  fd.append('file', 'This is my upload', 'foo.csv');
-
-  const options = {
-    headers: fd.headers
-  };
-
-  const response = await perform.post('/upload', fd.stream, options);
+test('receives POST data as Form', async t => {
+  const response = await perform.post(
+    '/bim',
+    querystring.stringify({ name: 'Zaiste' })
+  );
   t.is(response.status, 200);
+  t.is(response.data, 'POST: Zaiste');
 });
+
+// TODO
+// test('receives file upload', async t => {
+//   const fd = new FormData();
+
+//   fd.append('file', 'This is my upload', 'foo.csv');
+
+//   const options = {
+//     headers: fd.headers
+//   };
+
+//   const response = await perform.post('/upload', fd.stream, options);
+//   t.is(response.status, 200);
+// });
 
 // const { join } = require('path');
 

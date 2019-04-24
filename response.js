@@ -1,4 +1,4 @@
-// Copyright 2018 Zaiste & contributors. All rights reserved.
+// Copyright 2019 Zaiste & contributors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,21 +11,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// XXX auto-create those functions?
+// TODO auto-create those functions?
 
-const ok = (body = '', headers = {}) => ({ statusCode: 200, headers, body });
-const created = (body = '', headers = {}) => ({ statusCode: 201, headers, body });
-const accepted = (body = '', headers = {}) => ({ statusCode: 202, headers, body });
-const noContent = (headers = {}) => ({ statusCode: 204, headers, body: '' });
-const notFound = (headers = {}) => ({ statusCode: 404, headers, body: '' });
-const redirect = (url, body = 'Redirecting...', statusCode = 302) => ({
-  statusCode,
+const ok = (body = '', headers = {}) => ({ status: '200 OK', headers, body });
+const created = (body = '', headers = {}) => ({
+  status: '201 Created',
+  headers,
+  body
+});
+const accepted = (body = '', headers = {}) => ({
+  status: '202 Accepted',
+  headers,
+  body
+});
+const noContent = (headers = {}) => ({
+  status: '204 No Content',
+  headers,
+  body: ''
+});
+const notFound = (headers = {}) => ({
+  status: '404 Not Found',
+  headers,
+  body: ''
+});
+const redirect = (url, body = 'Redirecting...', status = '302 Found') => ({
+  status,
   headers: { Location: url },
   type: 'text/plain',
   body
 });
-const json = (content, statusCode = 200) => ({ statusCode, body: JSON.stringify(content), type: 'application/json' });
-const html = content => ({ statusCode: 200, type: 'text/html', body: content })
+const json = (content, status = '200 OK') => ({
+  status,
+  body: JSON.stringify(content),
+  type: 'application/json'
+});
+const html = content => ({
+  status: '200 OK',
+  type: 'text/html',
+  body: content
+});
 
 module.exports = {
   ok,
