@@ -1,7 +1,7 @@
 {
   "name": "szelmostwo",
-  "version": "0.4.0",
-  "description": "Minimal Node.js web framework built for modern JavaScript",
+  "version": "0.5.0",
+  "description": "Huncwot's Core Engine built on top of uWebSockets.js for Speed & Scale",
   "main": "index.js",
   "repository": "https://github.com/zaiste/szelmostwo",
   "scripts": {
