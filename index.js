@@ -206,13 +206,20 @@ const post = next => {
     let { _ } = context;
     const response = _.response;
 
-    let { body, headers, type, encoding, status, additional } = result;
+    let {
+      body,
+      headers = {},
+      type,
+      encoding,
+      status = '200 OK',
+      additional
+    } = result;
 
     if (typeof result === 'string' || result instanceof Stream) {
       body = result;
     }
 
-    response.writeStatus(status || '200 OK');
+    response.writeStatus(status);
 
     if (encoding) response.writeHeader('Content-Encoding', encoding);
 
