@@ -258,7 +258,7 @@ class Szelmostwo {
       post: {},
       put: {},
       patch: {},
-      delete: {}
+      del: {}
     };
   }
 
@@ -298,7 +298,7 @@ class Szelmostwo {
   }
 
   delete(path, ...func) {
-    this.route('delete', path, ...func);
+    this.route('del', path, ...func);
   }
 
   route(method, path, ...fns) {
