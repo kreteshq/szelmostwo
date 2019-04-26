@@ -2,15 +2,23 @@ import test from 'ava';
 const axios = require('axios');
 
 const Szelmostwo = require('..');
-const { ok } = require('../response.js');
 
 const identity = next => next;
 const append = next => async request => `Hello: ${await next(request)}`;
 
 const app = new Szelmostwo();
+
 app.get('/', _ => 'Hello, World');
-app.get('/json', _ => ok({ hello: 'world' }));
-app.get('/name/:name', ({ params }) => ok({ hello: params.name }));
+app.get('/json', _ => ({
+  status: '200 OK',
+  headers: {},
+  body: { hello: 'world' }
+}));
+app.get('/name/:name', ({ params }) => ({
+  status: '200 OK',
+  headers: {},
+  body: { hello: params.name }
+}));
 app.post('/bim', request => `POST: ${request.params.name}`);
 app.post('/upload', async request => `File Upload:`);
 
