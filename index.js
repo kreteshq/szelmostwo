@@ -109,7 +109,7 @@ const toUWS = handler => async (response, request) => {
 
     const result = await handler(context);
 
-    if (result) response.end(result);
+    response.end(result);
   } catch (error) {
     response.writeStatus('500 Internal Server Error');
     response.end(error.message);
@@ -207,7 +207,7 @@ const post = next => {
     const response = _.response;
 
     let {
-      body,
+      body = '',
       headers = {},
       type,
       encoding,

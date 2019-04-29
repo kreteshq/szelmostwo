@@ -19,6 +19,10 @@ app.get('/name/:name', ({ params }) => ({
   headers: {},
   body: { hello: params.name }
 }));
+app.get('/empty', _ => '');
+app.get('/unauthorized', _ => ({ status: '401 Unauthorized' }));
+app.get('/error', _ => ({ status: '500 Internal Server Error' }));
+
 app.post('/bim', request => `POST: ${request.params.name}`);
 app.post('/upload', async request => `File Upload:`);
 
@@ -35,6 +39,34 @@ test('returns string', async t => {
   const response = await perform.get('/');
   t.is(response.status, 200);
   t.is(response.data, 'Hello, World');
+});
+
+test('returns empty body', async t => {
+  const { status, data } = await perform.get('/empty');
+  t.is(status, 200);
+  t.is(data, '');
+});
+
+test('returns unauthorized response', async t => {
+  try {
+    await perform.get('/unauthorized');
+  } catch ({
+    response: { status, data }
+  }) {
+    t.is(status, 401);
+    t.is(data, '');
+  }
+});
+
+test('handles error response', async t => {
+  try {
+    await perform.get('/error');
+  } catch ({
+    response: { status, data }
+  }) {
+    t.is(status, 500);
+    t.is(data, '');
+  }
 });
 
 test('compose works & returns string', async t => {
