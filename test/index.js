@@ -22,6 +22,7 @@ app.get('/name/:name', ({ params }) => ({
 app.get('/empty', _ => '');
 app.get('/unauthorized', _ => ({ status: '401 Unauthorized' }));
 app.get('/error', _ => ({ status: '500 Internal Server Error' }));
+app.get('/read-cookies', ({ cookies }) => `Got Cookie: ${cookies.session}`);
 
 app.post('/bim', request => `POST: ${request.params.name}`);
 app.post('/upload', async request => `File Upload:`);
@@ -45,6 +46,16 @@ test('returns empty body', async t => {
   const { status, data } = await perform.get('/empty');
   t.is(status, 200);
   t.is(data, '');
+});
+
+test('returns sent cookie', async t => {
+  const { status, data } = await perform.get('/read-cookies', {
+    headers: {
+      Cookie: 'session=mysession123; foo=bar'
+    }
+  });
+  t.is(status, 200);
+  t.is(data, 'Got Cookie: mysession123');
 });
 
 test('returns unauthorized response', async t => {

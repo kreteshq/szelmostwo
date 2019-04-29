@@ -24,6 +24,40 @@ const isObject = _ => !!_ && _.constructor === Object;
 const compose = (...functions) => args =>
   functions.reduceRight((arg, fn) => fn(arg), args);
 
+const parseCookies = (cookieHeader = '') => {
+  const cookies = cookieHeader.split(/; */);
+  const decode = decodeURIComponent;
+
+  if (cookies[0] === '') return {};
+
+  const result = {};
+  for (let cookie of cookies) {
+    const isKeyValue = cookie.includes('=');
+
+    if (!isKeyValue) {
+      result[cookie.trim()] = true;
+      continue;
+    }
+
+    let [key, value] = cookie.split('=');
+
+    key.trim();
+    value.trim();
+
+    if ('"' === value[0]) value = value.slice(1, -1);
+
+    try {
+      value = decode(value);
+    } catch (error) {
+      // neglect
+    }
+
+    result[key] = value;
+  }
+
+  return result;
+};
+
 const parseBody = response => {
   let chunks;
   return new Promise((resolve, reject) => {
@@ -125,6 +159,7 @@ const pre = order => next => async context => {
   });
   context.headers = headers;
 
+  context.cookies = parseCookies(headers.cookie);
   context.method = _.request.getMethod();
   context.url = _.request.getUrl();
   context.queryparams = _.request.getQuery().substring(1);
