@@ -1,6 +1,6 @@
 {
   "name": "szelmostwo",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Huncwot's Core Engine built on top of uWebSockets.js for Speed & Scale",
   "main": "index.js",
   "repository": "https://github.com/zaiste/szelmostwo",
