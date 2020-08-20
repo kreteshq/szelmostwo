@@ -17,6 +17,8 @@ const http = require('uWebSockets.js');
 const Stream = require('stream');
 const querystring = require('querystring');
 const Busboy = require('busboy');
+const color = require('chalk');
+const stackParser = require('error-stack-parser');
 
 const pp = console.log.bind(console);
 
@@ -145,6 +147,8 @@ const toUWS = handler => async (response, request) => {
 
     response.end(result);
   } catch (error) {
+    printError(error);
+
     response.writeStatus('500 Internal Server Error');
     response.end(error.message);
   }
@@ -348,5 +352,18 @@ class Szelmostwo {
     this.routes[method][path] = toUWS(handler);
   }
 }
+
+const printError = (error, layer = 'General') => {
+  console.error(
+    color`{red ●} {bold.red Error}{gray /}${layer}: {bold ${error.message}}
+  {gray Explanation} \n  ${explain.for(error)}
+\n  {gray Stack trace}`
+  );
+
+  for (let message of stackParser.parse(error)) {
+    console.error(color`  - {yellow ${message.functionName}}
+    {bold ${message.fileName}}:{bold.underline.cyan ${message.lineNumber}}`);
+  }
+};
 
 module.exports = Szelmostwo;
